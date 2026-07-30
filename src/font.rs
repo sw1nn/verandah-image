@@ -106,14 +106,24 @@ mod tests {
         }
     }
 
+    /// `style` must be part of the cache key. Asserting only that two calls agree
+    /// on `is_some()` would still pass if the key dropped `style` and one style's
+    /// bytes were served for the other's.
     #[test]
-    fn get_system_font_distinguishes_style() {
-        // Styles are separate cache entries. If the system resolves both to the
-        // same file that is fine; what must not happen is one style's bytes
-        // being served for the other's key without a lookup.
-        let bold = get_system_font("sans-serif", Some("Bold"));
-        let plain = get_system_font("sans-serif", None);
-        assert_eq!(bold.is_some(), plain.is_some());
+    fn get_system_font_keys_the_cache_on_style() -> Result<(), String> {
+        let _ = get_system_font("DejaVu Sans", Some("Bold"));
+        let _ = get_system_font("DejaVu Sans", None);
+
+        let cache = font_cache().lock().map_err(|e| format!("cache lock poisoned: {e}"))?;
+        assert!(
+            cache.contains_key(&("DejaVu Sans".to_owned(), Some("Bold".to_owned()))),
+            "bold request did not create its own cache entry"
+        );
+        assert!(
+            cache.contains_key(&("DejaVu Sans".to_owned(), None)),
+            "unstyled request did not create its own cache entry"
+        );
+        Ok(())
     }
 
     /// The badge draws with DejaVu Sans Bold specifically — `sans-serif:Bold`
