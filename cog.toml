@@ -1,0 +1,15 @@
+tag_prefix = "v"
+skip_untracked = true
+ignore_merge_commits = true
+
+pre_bump_hooks = [
+  "sed -i 's/^version = \".*\"/version = \"{{version}}\"/' Cargo.toml",
+  "cargo update --workspace",
+  "git add Cargo.toml",
+]
+
+post_bump_hooks = ["git push", "git push origin v{{version}}"]
+
+[changelog]
+path = "CHANGELOG.md"
+authors = []

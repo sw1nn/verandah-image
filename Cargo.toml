@@ -1,0 +1,25 @@
+[package]
+name = "verandah-image"
+version = "0.1.0"
+edition = "2024"
+description = "Image composition and rendering helpers shared by verandah and its plugins"
+license = "MIT"
+repository = "https://github.com/sw1nn/verandah-image"
+
+[dependencies]
+# Image processing
+image = "0.25"
+imageproc = "0.26"
+
+# Font handling
+ab_glyph = "0.2"
+fontconfig = "0.10"
+
+# Serde
+serde = "1"
+
+# Logging
+tracing = "0.1"
+
+[dev-dependencies]
+serde_json = "1"
