@@ -114,7 +114,9 @@ mod tests {
         let _ = get_system_font("DejaVu Sans", Some("Bold"));
         let _ = get_system_font("DejaVu Sans", None);
 
-        let cache = font_cache().lock().map_err(|e| format!("cache lock poisoned: {e}"))?;
+        let cache = font_cache()
+            .lock()
+            .map_err(|e| format!("cache lock poisoned: {e}"))?;
         assert!(
             cache.contains_key(&("DejaVu Sans".to_owned(), Some("Bold".to_owned()))),
             "bold request did not create its own cache entry"
