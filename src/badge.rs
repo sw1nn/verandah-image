@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use ab_glyph::{Font, FontRef, OutlinedGlyph, PxScale, ScaleFont, point};
 use image::{Pixel, Rgba, RgbaImage};
-use serde::{Deserialize, Deserializer, de};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 /// Where the badge sits on the icon.
 ///
@@ -53,6 +53,32 @@ impl<'de> Deserialize<'de> for Gravity {
     {
         let s = String::deserialize(deserializer)?;
         Gravity::from_str(&s).map_err(de::Error::custom)
+    }
+}
+
+impl Gravity {
+    /// The ImageMagick spelling, which is what this serializes as.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::NorthWest => "NorthWest",
+            Self::North => "North",
+            Self::NorthEast => "NorthEast",
+            Self::West => "West",
+            Self::Center => "Center",
+            Self::East => "East",
+            Self::SouthWest => "SouthWest",
+            Self::South => "South",
+            Self::SouthEast => "SouthEast",
+        }
+    }
+}
+
+impl Serialize for Gravity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -438,6 +464,15 @@ pub fn apply_badge(icon: &mut RgbaImage, spec: &BadgeSpec) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gravity_round_trips_through_serde() -> Result<(), serde_json::Error> {
+        for gravity in [Gravity::NorthWest, Gravity::Center, Gravity::SouthEast] {
+            let json = serde_json::to_string(&gravity)?;
+            assert_eq!(serde_json::from_str::<Gravity>(&json)?, gravity);
+        }
+        Ok(())
+    }
 
     fn spec_at(gravity: Gravity) -> BadgeSpec {
         BadgeSpec {
