@@ -159,6 +159,16 @@ pub(crate) struct DiscGeometry {
 }
 
 /// Resolve `spec`'s proportional geometry against an icon's pixel dimensions.
+///
+/// This models a 1:1 viewBox-to-canvas mapping: `width` and `height` are assumed to
+/// be exactly the pixel grid the fractions are measured against. A caller that
+/// rasterizes through a bordered pipeline first — verandah's `convert_svg` renders
+/// at a fixed resolution, adds a border, and only then resizes to the target — is
+/// not that case: the rasterized artwork sits inset within the requested canvas by
+/// a small proportion (measured at roughly 1.7%), so the disc lands a few pixels off
+/// centre and slightly oversized at large canvases. This is invisible at real key
+/// sizes (72-96px, sub-pixel) and only measurable at large ones (a few px at 512px),
+/// so it is not corrected here.
 pub(crate) fn disc_geometry(width: u32, height: u32, spec: &BadgeSpec) -> DiscGeometry {
     let short = width.min(height) as f32;
     let r = short * spec.size / 2.0;
@@ -489,6 +499,13 @@ mod tests {
     /// canvas is (409.65, 102.35). Rounding the derived fractions to the two
     /// decimals the config exposes moves it 0.05px, to (409.60, 102.40). This
     /// test is what certifies the defaults reproduce the existing artwork.
+    ///
+    /// This validates `disc_geometry`'s arithmetic against the generator's own
+    /// viewBox — a 1:1 mapping of fractions to pixels — and NOT against what
+    /// verandah's `convert_svg` actually produces on disk. `convert_svg` rasterizes
+    /// through a bordered ImageMagick pipeline (`set_resolution` then
+    /// `border_image` then resize), which insets the artwork by a small proportion
+    /// before these fractions ever see it. See the doc comment on `disc_geometry`.
     #[test]
     fn disc_geometry_matches_generated_artwork_on_a_512_canvas() {
         let g = disc_geometry(512, 512, &spec_at(Gravity::NorthEast));
