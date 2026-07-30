@@ -104,4 +104,35 @@ mod tests {
         assert_eq!(g, Gravity::NorthEast);
         Ok(())
     }
+
+    #[test]
+    fn gravity_maps_every_variant_from_both_spellings() -> Result<(), String> {
+        let cases = [
+            ("NorthWest", "NW", Gravity::NorthWest),
+            ("North", "N", Gravity::North),
+            ("NorthEast", "NE", Gravity::NorthEast),
+            ("West", "W", Gravity::West),
+            ("Center", "C", Gravity::Center),
+            ("East", "E", Gravity::East),
+            ("SouthWest", "SW", Gravity::SouthWest),
+            ("South", "S", Gravity::South),
+            ("SouthEast", "SE", Gravity::SouthEast),
+        ];
+        for (word, abbrev, want) in cases {
+            assert_eq!(word.parse::<Gravity>()?, want, "full word {word}");
+            assert_eq!(abbrev.parse::<Gravity>()?, want, "abbreviation {abbrev}");
+            // and case-insensitively
+            assert_eq!(
+                word.to_ascii_lowercase().parse::<Gravity>()?,
+                want,
+                "lowercased {word}"
+            );
+            assert_eq!(
+                abbrev.to_ascii_lowercase().parse::<Gravity>()?,
+                want,
+                "lowercased {abbrev}"
+            );
+        }
+        Ok(())
+    }
 }
