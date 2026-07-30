@@ -2,7 +2,7 @@
 
 use std::str::FromStr;
 
-use image::{Rgba, RgbaImage};
+use image::{Pixel, Rgba, RgbaImage};
 use serde::{Deserialize, Deserializer, de};
 
 /// Where the badge sits on the icon.
@@ -159,6 +159,63 @@ pub(crate) fn disc_geometry(width: u32, height: u32, spec: &BadgeSpec) -> DiscGe
     }
 }
 
+/// Fraction of pixel `(px, py)` covered by a disc of radius `r` at `(cx, cy)`.
+///
+/// A one-pixel linear ramp at the boundary. Exact enough for a disc tens of
+/// pixels across, and much cheaper than supersampling.
+#[allow(dead_code)]
+fn circle_coverage(px: u32, py: u32, cx: f32, cy: f32, r: f32) -> f32 {
+    let dx = px as f32 + 0.5 - cx;
+    let dy = py as f32 + 0.5 - cy;
+    let distance = (dx * dx + dy * dy).sqrt();
+    (r + 0.5 - distance).clamp(0.0, 1.0)
+}
+
+/// Half-open pixel range `(x0, y0, x1, y1)` enclosing a disc, clamped to the image.
+#[allow(dead_code)]
+fn bounding_box(width: u32, height: u32, cx: f32, cy: f32, r: f32) -> (u32, u32, u32, u32) {
+    let x0 = (cx - r - 1.0).floor().max(0.0) as u32;
+    let y0 = (cy - r - 1.0).floor().max(0.0) as u32;
+    let x1 = ((cx + r + 1.0).ceil().max(0.0) as u32).min(width);
+    let y1 = ((cy + r + 1.0).ceil().max(0.0) as u32).min(height);
+    (x0, y0, x1, y1)
+}
+
+/// Erase the base artwork within the knockout radius by scaling its alpha to
+/// zero, leaving RGB untouched.
+///
+/// The knockout radius exceeds the disc radius, so a transparent ring of width
+/// `r * clearance` separates the disc from the artwork.
+#[allow(dead_code)]
+fn knockout(icon: &mut RgbaImage, g: &DiscGeometry) {
+    let (x0, y0, x1, y1) = bounding_box(icon.width(), icon.height(), g.cx, g.cy, g.knock_r);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let coverage = circle_coverage(x, y, g.cx, g.cy, g.knock_r);
+            if coverage > 0.0 {
+                let pixel = icon.get_pixel_mut(x, y);
+                pixel[3] = (f32::from(pixel[3]) * (1.0 - coverage)).round() as u8;
+            }
+        }
+    }
+}
+
+/// Composite the disc over the icon, its edge antialiased by coverage.
+#[allow(dead_code)]
+fn fill_disc(icon: &mut RgbaImage, g: &DiscGeometry, fill: Rgba<u8>) {
+    let (x0, y0, x1, y1) = bounding_box(icon.width(), icon.height(), g.cx, g.cy, g.r);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let coverage = circle_coverage(x, y, g.cx, g.cy, g.r);
+            if coverage > 0.0 {
+                let mut source = fill;
+                source[3] = (f32::from(fill[3]) * coverage).round() as u8;
+                icon.get_pixel_mut(x, y).blend(&source);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,6 +225,10 @@ mod tests {
             gravity,
             ..BadgeSpec::new(Mark::Text("1".to_owned()))
         }
+    }
+
+    fn opaque(width: u32, height: u32) -> RgbaImage {
+        RgbaImage::from_pixel(width, height, Rgba([10, 200, 30, 255]))
     }
 
     /// The disc centre the shell generator produces at --font-size 135 on a 512
@@ -312,5 +373,95 @@ mod tests {
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn circle_coverage_is_one_inside_zero_outside_and_partial_at_the_edge() {
+        // Centre of a radius-10 disc at (20.0, 20.0).
+        assert_eq!(circle_coverage(20, 20, 20.0, 20.0, 10.0), 1.0);
+        // Far outside.
+        assert_eq!(circle_coverage(0, 0, 20.0, 20.0, 10.0), 0.0);
+        // Straddling the edge: pixel centre at 30.5 is 10.5 from centre, so
+        // coverage = 10 + 0.5 - 10.5 = 0.0; at 29.5 it is fully covered.
+        let edge = circle_coverage(29, 20, 20.0, 20.0, 10.0);
+        assert!(edge > 0.0 && edge <= 1.0, "edge coverage was {edge}");
+    }
+
+    #[test]
+    fn knockout_zeroes_alpha_inside_and_leaves_the_rest_alone() {
+        let mut img = opaque(72, 72);
+        let spec = spec_at(Gravity::NorthEast);
+        let g = disc_geometry(72, 72, &spec);
+
+        knockout(&mut img, &g);
+
+        // Disc centre is fully knocked out.
+        let centre = img.get_pixel(g.cx.round() as u32, g.cy.round() as u32);
+        assert_eq!(centre[3], 0, "centre alpha");
+
+        // A pixel in the clearance ring, just outside the disc but inside the
+        // knockout, is also fully transparent.
+        let ring_x = (g.cx + (g.r + g.knock_r) / 2.0).round() as u32;
+        let ring = img.get_pixel(ring_x, g.cy.round() as u32);
+        assert_eq!(ring[3], 0, "clearance ring alpha");
+
+        // The opposite corner is untouched.
+        assert_eq!(*img.get_pixel(0, 71), Rgba([10, 200, 30, 255]));
+    }
+
+    #[test]
+    fn knockout_preserves_rgb_so_only_alpha_carries_the_hole() {
+        let mut img = opaque(72, 72);
+        let spec = spec_at(Gravity::Center);
+        let g = disc_geometry(72, 72, &spec);
+
+        knockout(&mut img, &g);
+
+        let centre = img.get_pixel(36, 36);
+        assert_eq!([centre[0], centre[1], centre[2]], [10, 200, 30]);
+    }
+
+    #[test]
+    fn fill_disc_paints_the_disc_and_nothing_beyond_the_knockout() {
+        let mut img = opaque(72, 72);
+        let spec = spec_at(Gravity::NorthEast);
+        let g = disc_geometry(72, 72, &spec);
+        let fill = Rgba([0x03, 0x4a, 0x0e, 0xff]);
+
+        fill_disc(&mut img, &g, fill);
+
+        assert_eq!(
+            *img.get_pixel(g.cx.round() as u32, g.cy.round() as u32),
+            fill
+        );
+        // Well outside the disc, the base survives.
+        assert_eq!(*img.get_pixel(0, 71), Rgba([10, 200, 30, 255]));
+    }
+
+    /// A disc larger than the icon must clip to the image rather than index out
+    /// of bounds, and must still paint what falls inside.
+    #[test]
+    fn fill_disc_clips_a_disc_larger_than_the_image() {
+        let mut img = opaque(20, 20);
+        let spec = BadgeSpec {
+            size: 1.5, // deliberately larger than the icon
+            inset: 0.0,
+            ..BadgeSpec::new(Mark::Text("1".to_owned()))
+        };
+        let g = disc_geometry(20, 20, &spec);
+        let fill = Rgba([1, 2, 3, 255]);
+
+        knockout(&mut img, &g);
+        fill_disc(&mut img, &g, fill);
+
+        assert_eq!(
+            img.dimensions(),
+            (20, 20),
+            "clipping changed the image size"
+        );
+        // The disc centre lies inside the image and must carry the fill.
+        let (cx, cy) = (g.cx.round() as u32, g.cy.round() as u32);
+        assert!(cx < 20 && cy < 20, "centre ({cx},{cy}) left the image");
+        assert_eq!(*img.get_pixel(cx, cy), fill);
     }
 }
