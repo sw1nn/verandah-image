@@ -9,6 +9,7 @@
 //! Nothing in this crate crosses the verandah plugin ABI, so verandah and a
 //! plugin may each link their own version without conflict.
 
+pub mod badge;
 pub mod colors;
 pub mod font;
 pub mod image;
