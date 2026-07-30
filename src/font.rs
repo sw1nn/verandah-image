@@ -3,7 +3,9 @@
 //! Provides cached access to system fonts via fontconfig.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+
+use parking_lot::Mutex;
 
 static SYSTEM_FONT: OnceLock<Option<Vec<u8>>> = OnceLock::new();
 
@@ -31,16 +33,29 @@ pub fn get_system_monospace_font() -> Option<&'static Vec<u8>> {
 /// The bytes are leaked deliberately to keep the `'static` lifetime callers
 /// need for `ab_glyph::FontRef`. The number of distinct faces requested over a
 /// process lifetime is a handful.
+///
+/// `parking_lot::Mutex` rather than `std::sync::Mutex`: it does not poison, so a
+/// panic elsewhere while this lock is held cannot make every future lookup return
+/// `None` for the rest of the process's life — the badge draws with this cache on
+/// every render.
+///
+/// The lock is dropped for the fontconfig lookup and file read, so a slow first
+/// lookup for one face does not block a concurrent lookup for another; the cache is
+/// only re-locked, briefly, to record the result.
 pub fn get_system_font(family: &str, style: Option<&str>) -> Option<&'static [u8]> {
     let key = (family.to_owned(), style.map(str::to_owned));
 
-    let mut cache = font_cache().lock().ok()?;
-    if let Some(hit) = cache.get(&key) {
+    if let Some(hit) = font_cache().lock().get(&key) {
         return *hit;
     }
 
     let loaded = load_font(family, style);
-    cache.insert(key, loaded);
+
+    // Another thread may have raced this one and already inserted for the same
+    // key while the lock above was dropped. `or_insert` keeps whichever value
+    // landed first; either is a correct answer for `key`, so this thread still
+    // returns its own `loaded` rather than whatever the cache now holds.
+    font_cache().lock().entry(key).or_insert(loaded);
     loaded
 }
 
@@ -114,9 +129,7 @@ mod tests {
         let _ = get_system_font("DejaVu Sans", Some("Bold"));
         let _ = get_system_font("DejaVu Sans", None);
 
-        let cache = font_cache()
-            .lock()
-            .map_err(|e| format!("cache lock poisoned: {e}"))?;
+        let cache = font_cache().lock();
         assert!(
             cache.contains_key(&("DejaVu Sans".to_owned(), Some("Bold".to_owned()))),
             "bold request did not create its own cache entry"
