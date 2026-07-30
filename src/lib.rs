@@ -1,6 +1,6 @@
 //! Image composition and rendering helpers shared by verandah and its plugins.
 //!
-//! - **badge**: compose a badge — a mark on a filled disc — onto an icon
+//! - **badge**: Compose a badge — a mark on a filled disc — onto an icon
 //! - **colors**: CSS color parsing (named colors and hex formats)
 //! - **font**: system font loading via fontconfig
 //! - **text**: text measurement and rendering utilities
@@ -31,11 +31,14 @@ pub mod prelude {
     pub use imageproc::drawing::{draw_filled_rect_mut, draw_text_mut};
     pub use imageproc::rect::Rect;
 
+    // Badge composition
+    pub use crate::badge::{BadgeSpec, Gravity, Mark, apply_badge};
+
     // Colors
     pub use crate::colors::{get_color, hex as rgb, lookup as lookup_color, parse_colors};
 
     // Font
-    pub use crate::font::get_system_monospace_font;
+    pub use crate::font::{get_system_font, get_system_monospace_font};
 
     // Text
     pub use crate::text::{

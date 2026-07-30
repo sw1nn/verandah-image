@@ -125,7 +125,6 @@ impl BadgeSpec {
 
 /// Resolved pixel geometry of the disc on a particular icon.
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub(crate) struct DiscGeometry {
     pub cx: f32,
     pub cy: f32,
@@ -134,7 +133,6 @@ pub(crate) struct DiscGeometry {
 }
 
 /// Resolve `spec`'s proportional geometry against an icon's pixel dimensions.
-#[allow(dead_code)]
 pub(crate) fn disc_geometry(width: u32, height: u32, spec: &BadgeSpec) -> DiscGeometry {
     let short = width.min(height) as f32;
     let r = short * spec.size / 2.0;
@@ -164,7 +162,6 @@ pub(crate) fn disc_geometry(width: u32, height: u32, spec: &BadgeSpec) -> DiscGe
 ///
 /// A one-pixel linear ramp at the boundary. Exact enough for a disc tens of
 /// pixels across, and much cheaper than supersampling.
-#[allow(dead_code)]
 fn circle_coverage(px: u32, py: u32, cx: f32, cy: f32, r: f32) -> f32 {
     let dx = px as f32 + 0.5 - cx;
     let dy = py as f32 + 0.5 - cy;
@@ -173,7 +170,6 @@ fn circle_coverage(px: u32, py: u32, cx: f32, cy: f32, r: f32) -> f32 {
 }
 
 /// Half-open pixel range `(x0, y0, x1, y1)` enclosing a disc, clamped to the image.
-#[allow(dead_code)]
 fn bounding_box(width: u32, height: u32, cx: f32, cy: f32, r: f32) -> (u32, u32, u32, u32) {
     let x0 = (cx - r - 1.0).floor().max(0.0) as u32;
     let y0 = (cy - r - 1.0).floor().max(0.0) as u32;
@@ -187,7 +183,6 @@ fn bounding_box(width: u32, height: u32, cx: f32, cy: f32, r: f32) -> (u32, u32,
 ///
 /// The knockout radius exceeds the disc radius, so a transparent ring of width
 /// `r * clearance` separates the disc from the artwork.
-#[allow(dead_code)]
 fn knockout(icon: &mut RgbaImage, g: &DiscGeometry) {
     let (x0, y0, x1, y1) = bounding_box(icon.width(), icon.height(), g.cx, g.cy, g.knock_r);
     for y in y0..y1 {
@@ -202,7 +197,6 @@ fn knockout(icon: &mut RgbaImage, g: &DiscGeometry) {
 }
 
 /// Composite the disc over the icon, its edge antialiased by coverage.
-#[allow(dead_code)]
 fn fill_disc(icon: &mut RgbaImage, g: &DiscGeometry, fill: Rgba<u8>) {
     let (x0, y0, x1, y1) = bounding_box(icon.width(), icon.height(), g.cx, g.cy, g.r);
     for y in y0..y1 {
@@ -224,7 +218,6 @@ fn fill_disc(icon: &mut RgbaImage, g: &DiscGeometry, fill: Rgba<u8>) {
 /// typical Arch box, whose digits differ in shape and cap height — moving a key to
 /// a declared badge would then be a visible change. Falls back to any bold sans so
 /// a machine without DejaVu still gets a badge rather than none.
-#[allow(dead_code)]
 fn badge_font_bytes() -> Option<&'static [u8]> {
     crate::font::get_system_font("DejaVu Sans", Some("Bold"))
         .or_else(|| crate::font::get_system_font("sans-serif", Some("Bold")))
@@ -233,18 +226,15 @@ fn badge_font_bytes() -> Option<&'static [u8]> {
 /// Cap height as a fraction of the disc diameter.
 ///
 /// The generator's 0.729em cap height against its 1.22em disc.
-#[allow(dead_code)]
 const CAP_HEIGHT_FACTOR: f32 = 0.598;
 
 /// The ink box's half-diagonal may not exceed this fraction of the disc radius.
 ///
 /// The generator's stated 0.51em digit half-diagonal against its 0.61em radius.
 /// Inactive for a single digit; it is what lets a two-character mark fit.
-#[allow(dead_code)]
 const FIT_LIMIT: f32 = 0.84;
 
 /// A mark laid out at the scale that fits it to the disc.
-#[allow(dead_code)]
 struct FittedText {
     scale: f32,
     glyphs: Vec<OutlinedGlyph>,
@@ -257,7 +247,6 @@ struct FittedText {
 /// `ab_glyph` exposes ascent and descent but not cap height, and deriving the
 /// scale from the mark's own ink box would size `1` and `8` differently.
 /// Measuring one reference glyph keeps every digit consistent.
-#[allow(dead_code)]
 fn cap_height_ratio<F>(font: &F) -> Option<f32>
 where
     F: Font,
@@ -271,7 +260,6 @@ where
 }
 
 /// Outline `text` on a baseline at the origin, dropping glyphs with no outline.
-#[allow(dead_code)]
 fn layout<F>(font: &F, text: &str, scale: f32) -> Vec<OutlinedGlyph>
 where
     F: Font,
@@ -293,7 +281,6 @@ where
 }
 
 /// Union of the glyphs' ink bounds, or `None` when none has an outline.
-#[allow(dead_code)]
 fn ink_bounds(glyphs: &[OutlinedGlyph]) -> Option<(f32, f32, f32, f32)> {
     let mut iter = glyphs.iter();
     let first = iter.next()?.px_bounds();
@@ -311,7 +298,6 @@ fn ink_bounds(glyphs: &[OutlinedGlyph]) -> Option<(f32, f32, f32, f32)> {
 }
 
 /// Half-diagonal of an ink box.
-#[allow(dead_code)]
 fn half_diagonal(bounds: (f32, f32, f32, f32)) -> f32 {
     let (min_x, min_y, max_x, max_y) = bounds;
     let (w, h) = (max_x - min_x, max_y - min_y);
@@ -322,7 +308,6 @@ fn half_diagonal(bounds: (f32, f32, f32, f32)) -> f32 {
 ///
 /// Returns `None` when the font has no cap-height reference or the mark has no
 /// drawable outline at all.
-#[allow(dead_code)]
 fn fit_text<F>(font: &F, text: &str, r: f32) -> Option<FittedText>
 where
     F: Font,
@@ -356,7 +341,6 @@ where
 ///
 /// Silently draws nothing if no bold sans face is available — a missing badge is
 /// better than a missing button.
-#[allow(dead_code)]
 fn draw_text_mark(icon: &mut RgbaImage, g: &DiscGeometry, text: &str, color: Rgba<u8>) {
     let Some(bytes) = badge_font_bytes() else {
         tracing::warn!("No bold sans face found; badge text not drawn");
@@ -405,7 +389,6 @@ fn draw_text_mark(icon: &mut RgbaImage, g: &DiscGeometry, text: &str, color: Rgb
 ///
 /// Aspect ratio is preserved. Padding within the mark is the logo author's
 /// business — the disc beneath it is drawn separately, as in the generator.
-#[allow(dead_code)]
 fn draw_logo_mark(icon: &mut RgbaImage, g: &DiscGeometry, logo: &RgbaImage) {
     if logo.width() == 0 || logo.height() == 0 {
         return;
@@ -426,6 +409,30 @@ fn draw_logo_mark(icon: &mut RgbaImage, g: &DiscGeometry, logo: &RgbaImage) {
     tracing::debug!(width, height, x, y, "Drawing badge logo mark");
 
     image::imageops::overlay(icon, &resized, x, y);
+}
+
+/// Compose `spec`'s badge onto `icon`, in place.
+///
+/// Three ordered steps: knock the base's alpha out within the clearance radius,
+/// fill the disc, then draw the mark. Because the knockout radius exceeds the
+/// disc radius, a transparent ring separates the disc from the base artwork.
+///
+/// The icon's dimensions are unchanged. Geometry is proportional to the shorter
+/// side, so one spec serves every key size.
+pub fn apply_badge(icon: &mut RgbaImage, spec: &BadgeSpec) {
+    if icon.width() == 0 || icon.height() == 0 {
+        return;
+    }
+
+    let geometry = disc_geometry(icon.width(), icon.height(), spec);
+
+    knockout(icon, &geometry);
+    fill_disc(icon, &geometry, spec.disc_fill);
+
+    match &spec.mark {
+        Mark::Text(text) => draw_text_mark(icon, &geometry, text, spec.text_color),
+        Mark::Logo(logo) => draw_logo_mark(icon, &geometry, logo),
+    }
 }
 
 #[cfg(test)]
@@ -970,5 +977,86 @@ mod tests {
         // At least one pixel changed: the mark was drawn, not silently dropped.
         let painted = img.pixels().any(|p| *p != Rgba([0, 0, 0, 255]));
         assert!(painted, "the logo was not drawn at all");
+    }
+
+    #[test]
+    fn apply_badge_knocks_out_fills_and_marks_in_order() {
+        let mut img = opaque(72, 72);
+        let spec = spec_at(Gravity::NorthEast);
+        let g = disc_geometry(72, 72, &spec);
+
+        apply_badge(&mut img, &spec);
+
+        // The clearance ring is transparent: knockout ran and the disc did not
+        // cover it.
+        let ring_x = (g.cx + (g.r + g.knock_r) / 2.0).round() as u32;
+        assert_eq!(img.get_pixel(ring_x, g.cy.round() as u32)[3], 0);
+
+        // Somewhere inside the disc is disc_fill or text_color, not the base.
+        let mut disc_pixels = 0usize;
+        for y in 0..72 {
+            for x in 0..72 {
+                let dx = x as f32 + 0.5 - g.cx;
+                let dy = y as f32 + 0.5 - g.cy;
+                if (dx * dx + dy * dy).sqrt() < g.r - 2.0 {
+                    let p = *img.get_pixel(x, y);
+                    assert_ne!(p, Rgba([10, 200, 30, 255]), "base survived inside the disc");
+                    disc_pixels += 1;
+                }
+            }
+        }
+        assert!(disc_pixels > 0);
+
+        // The opposite corner is untouched.
+        assert_eq!(*img.get_pixel(0, 71), Rgba([10, 200, 30, 255]));
+    }
+
+    #[test]
+    fn apply_badge_works_for_every_gravity() {
+        for gravity in [
+            Gravity::NorthWest,
+            Gravity::North,
+            Gravity::NorthEast,
+            Gravity::West,
+            Gravity::Center,
+            Gravity::East,
+            Gravity::SouthWest,
+            Gravity::South,
+            Gravity::SouthEast,
+        ] {
+            let mut img = opaque(72, 72);
+            let spec = spec_at(gravity);
+            let g = disc_geometry(72, 72, &spec);
+            apply_badge(&mut img, &spec);
+
+            let centre = *img.get_pixel(g.cx.round() as u32, g.cy.round() as u32);
+            assert_ne!(
+                centre,
+                Rgba([10, 200, 30, 255]),
+                "{gravity:?} left the base showing at the disc centre"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_badge_accepts_a_logo_mark() {
+        let mut img = opaque(72, 72);
+        let logo = RgbaImage::from_pixel(64, 64, Rgba([255, 0, 255, 255]));
+        let spec = BadgeSpec::new(Mark::Logo(logo));
+        let g = disc_geometry(72, 72, &spec);
+
+        apply_badge(&mut img, &spec);
+
+        assert_eq!(
+            *img.get_pixel(g.cx.round() as u32, g.cy.round() as u32),
+            Rgba([255, 0, 255, 255])
+        );
+    }
+
+    #[test]
+    fn apply_badge_preserves_dimensions() {
+        let mut img = opaque(100, 50);
+        apply_badge(&mut img, &spec_at(Gravity::NorthEast));
+        assert_eq!(img.dimensions(), (100, 50));
     }
 }
