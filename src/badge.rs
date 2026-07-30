@@ -1038,6 +1038,44 @@ mod tests {
         }
     }
 
+    /// Pins the knockout → disc → mark order, which the other apply_badge tests
+    /// cannot: they assert only `pixel != base`, and `knockout` zeroing alpha
+    /// satisfies that on its own. So deleting `fill_disc`, or running it before
+    /// `knockout`, leaves them green.
+    ///
+    /// An opaque disc-coloured pixel inside `r` can only exist if `fill_disc` ran
+    /// AFTER `knockout` — run before, its alpha would have been zeroed to 0; not run
+    /// at all, no pixel carries the fill colour.
+    #[test]
+    fn apply_badge_fills_the_disc_after_knocking_it_out() -> Result<(), String> {
+        let mut img = opaque(72, 72);
+        let spec = spec_at(Gravity::NorthEast);
+        let g = disc_geometry(72, 72, &spec);
+
+        apply_badge(&mut img, &spec);
+
+        // Some pixel strictly inside the disc is opaque and carries disc_fill.
+        let found = (0..72)
+            .flat_map(|y| (0..72).map(move |x| (x, y)))
+            .filter(|&(x, y)| circle_coverage(x, y, g.cx, g.cy, g.r) >= 1.0)
+            .any(|(x, y)| *img.get_pixel(x, y) == spec.disc_fill);
+        assert!(
+            found,
+            "no fully-covered pixel carries disc_fill — fill_disc was skipped or ran before knockout"
+        );
+
+        // And the separating ring is still transparent, so knockout ran and was not
+        // painted over.
+        let ring_x = (g.cx + (g.r + g.knock_r) / 2.0).round() as u32;
+        assert_eq!(
+            img.get_pixel(ring_x, g.cy.round() as u32)[3],
+            0,
+            "the clearance ring is not transparent"
+        );
+
+        Ok(())
+    }
+
     #[test]
     fn apply_badge_accepts_a_logo_mark() {
         let mut img = opaque(72, 72);
