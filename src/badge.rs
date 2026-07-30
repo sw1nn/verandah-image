@@ -381,10 +381,11 @@ mod tests {
         assert_eq!(circle_coverage(20, 20, 20.0, 20.0, 10.0), 1.0);
         // Far outside.
         assert_eq!(circle_coverage(0, 0, 20.0, 20.0, 10.0), 0.0);
-        // Straddling the edge: pixel centre at 30.5 is 10.5 from centre, so
-        // coverage = 10 + 0.5 - 10.5 = 0.0; at 29.5 it is fully covered.
+        // Straddling the edge: pixel (29, 20) has centre at (29.5, 20.5), distance
+        // from (20.0, 20.0) is sqrt(9.5^2 + 0.5^2) ≈ 9.5126, so coverage =
+        // clamp(10.5 - 9.5126) = 0.9874: partial, not full.
         let edge = circle_coverage(29, 20, 20.0, 20.0, 10.0);
-        assert!(edge > 0.0 && edge <= 1.0, "edge coverage was {edge}");
+        assert!(edge > 0.0 && edge < 1.0, "edge coverage was {edge}");
     }
 
     #[test]
@@ -463,5 +464,60 @@ mod tests {
         let (cx, cy) = (g.cx.round() as u32, g.cy.round() as u32);
         assert!(cx < 20 && cy < 20, "centre ({cx},{cy}) left the image");
         assert_eq!(*img.get_pixel(cx, cy), fill);
+    }
+
+    /// The disc edge is antialiased: a partially-covered pixel must land strictly
+    /// between the fill and the base, and a partially-knocked-out pixel strictly
+    /// between opaque and transparent. Without this, hard-thresholding coverage to
+    /// 0 or 1 would pass every other test in this module.
+    #[test]
+    fn edge_pixels_are_blended_not_thresholded() -> Result<(), String> {
+        let base = Rgba([10, 200, 30, 255]);
+        let fill = Rgba([3, 74, 14, 255]);
+        let spec = spec_at(Gravity::NorthEast);
+        let g = disc_geometry(72, 72, &spec);
+
+        // A pixel the disc covers only partially.
+        let (px, py) = (0..72)
+            .flat_map(|y| (0..72).map(move |x| (x, y)))
+            .find(|&(x, y)| {
+                let c = circle_coverage(x, y, g.cx, g.cy, g.r);
+                c > 0.05 && c < 0.95
+            })
+            .ok_or("no partially covered pixel found on the disc edge")?;
+
+        let mut img = RgbaImage::from_pixel(72, 72, base);
+        fill_disc(&mut img, &g, fill);
+        let blended = *img.get_pixel(px, py);
+        for channel in 0..3 {
+            let (lo, hi) = (
+                fill[channel].min(base[channel]),
+                fill[channel].max(base[channel]),
+            );
+            assert!(
+                blended[channel] > lo && blended[channel] < hi,
+                "channel {channel} at ({px},{py}) was {} — not between {lo} and {hi}",
+                blended[channel]
+            );
+        }
+
+        // And the knockout ramps alpha rather than switching it.
+        let (kx, ky) = (0..72)
+            .flat_map(|y| (0..72).map(move |x| (x, y)))
+            .find(|&(x, y)| {
+                let c = circle_coverage(x, y, g.cx, g.cy, g.knock_r);
+                c > 0.05 && c < 0.95
+            })
+            .ok_or("no partially knocked-out pixel found")?;
+
+        let mut img = RgbaImage::from_pixel(72, 72, base);
+        knockout(&mut img, &g);
+        let alpha = img.get_pixel(kx, ky)[3];
+        assert!(
+            alpha > 0 && alpha < 255,
+            "alpha at ({kx},{ky}) was {alpha}, not partial"
+        );
+
+        Ok(())
     }
 }
