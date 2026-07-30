@@ -401,6 +401,33 @@ fn draw_text_mark(icon: &mut RgbaImage, g: &DiscGeometry, text: &str, color: Rgb
     }
 }
 
+/// Draw `logo` scaled into the square inscribed in the disc, centred.
+///
+/// Aspect ratio is preserved. Padding within the mark is the logo author's
+/// business — the disc beneath it is drawn separately, as in the generator.
+#[allow(dead_code)]
+fn draw_logo_mark(icon: &mut RgbaImage, g: &DiscGeometry, logo: &RgbaImage) {
+    if logo.width() == 0 || logo.height() == 0 {
+        return;
+    }
+
+    // Side of the square inscribed in the disc.
+    let side = 2.0 * g.r / std::f32::consts::SQRT_2;
+    let scale = (side / logo.width() as f32).min(side / logo.height() as f32);
+    let width = ((logo.width() as f32 * scale).round() as u32).max(1);
+    let height = ((logo.height() as f32 * scale).round() as u32).max(1);
+
+    let resized =
+        image::imageops::resize(logo, width, height, image::imageops::FilterType::Lanczos3);
+
+    let x = (g.cx - width as f32 / 2.0).round() as i64;
+    let y = (g.cy - height as f32 / 2.0).round() as i64;
+
+    tracing::debug!(width, height, x, y, "Drawing badge logo mark");
+
+    image::imageops::overlay(icon, &resized, x, y);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -856,5 +883,92 @@ mod tests {
         let spec = spec_at(Gravity::NorthEast);
         let g = disc_geometry(72, 72, &spec);
         draw_text_mark(&mut img, &g, "   ", Rgba([255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn draw_logo_mark_centres_the_logo_on_the_disc() {
+        let mut img = RgbaImage::from_pixel(72, 72, Rgba([0, 0, 0, 255]));
+        let spec = spec_at(Gravity::NorthEast);
+        let g = disc_geometry(72, 72, &spec);
+        let logo = RgbaImage::from_pixel(64, 64, Rgba([255, 0, 255, 255]));
+
+        draw_logo_mark(&mut img, &g, &logo);
+
+        // The disc centre carries the logo.
+        let centre = img.get_pixel(g.cx.round() as u32, g.cy.round() as u32);
+        assert_eq!(*centre, Rgba([255, 0, 255, 255]));
+        // The far corner does not.
+        assert_eq!(*img.get_pixel(0, 71), Rgba([0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn draw_logo_mark_fits_within_the_inscribed_square() {
+        let mut img = RgbaImage::from_pixel(200, 200, Rgba([0, 0, 0, 255]));
+        let spec = spec_at(Gravity::Center);
+        let g = disc_geometry(200, 200, &spec);
+        let logo = RgbaImage::from_pixel(100, 100, Rgba([255, 0, 255, 255]));
+
+        draw_logo_mark(&mut img, &g, &logo);
+
+        // Every logo pixel lies inside the disc, since the inscribed square does.
+        for y in 0..200 {
+            for x in 0..200 {
+                if *img.get_pixel(x, y) != Rgba([255, 0, 255, 255]) {
+                    continue;
+                }
+                let dx = x as f32 + 0.5 - g.cx;
+                let dy = y as f32 + 0.5 - g.cy;
+                assert!(
+                    (dx * dx + dy * dy).sqrt() <= g.r + 1.0,
+                    "logo pixel at ({x},{y}) escaped the disc"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn draw_logo_mark_preserves_aspect_ratio() {
+        let mut img = RgbaImage::from_pixel(200, 200, Rgba([0, 0, 0, 255]));
+        let spec = spec_at(Gravity::Center);
+        let g = disc_geometry(200, 200, &spec);
+        // Twice as wide as it is tall.
+        let logo = RgbaImage::from_pixel(80, 40, Rgba([255, 0, 255, 255]));
+
+        draw_logo_mark(&mut img, &g, &logo);
+
+        let mut min_x = u32::MAX;
+        let mut max_x = 0u32;
+        let mut min_y = u32::MAX;
+        let mut max_y = 0u32;
+        for y in 0..200 {
+            for x in 0..200 {
+                if *img.get_pixel(x, y) == Rgba([255, 0, 255, 255]) {
+                    min_x = min_x.min(x);
+                    max_x = max_x.max(x);
+                    min_y = min_y.min(y);
+                    max_y = max_y.max(y);
+                }
+            }
+        }
+        let w = (max_x - min_x + 1) as f32;
+        let h = (max_y - min_y + 1) as f32;
+        assert!((w / h - 2.0).abs() < 0.15, "aspect was {}", w / h);
+    }
+
+    /// An 8px icon gives a disc about 2.5px across, so the logo downscales to a pixel
+    /// or two. It must still land, and must not resize to a zero dimension.
+    #[test]
+    fn draw_logo_mark_survives_a_tiny_disc() {
+        let mut img = RgbaImage::from_pixel(8, 8, Rgba([0, 0, 0, 255]));
+        let spec = spec_at(Gravity::NorthEast);
+        let g = disc_geometry(8, 8, &spec);
+        let logo = RgbaImage::from_pixel(64, 64, Rgba([255, 0, 255, 255]));
+
+        draw_logo_mark(&mut img, &g, &logo);
+
+        assert_eq!(img.dimensions(), (8, 8));
+        // At least one pixel changed: the mark was drawn, not silently dropped.
+        let painted = img.pixels().any(|p| *p != Rgba([0, 0, 0, 255]));
+        assert!(painted, "the logo was not drawn at all");
     }
 }
