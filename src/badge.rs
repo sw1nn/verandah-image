@@ -2,6 +2,7 @@
 
 use std::str::FromStr;
 
+use ab_glyph::{Font, FontRef, OutlinedGlyph, PxScale, ScaleFont, point};
 use image::{Pixel, Rgba, RgbaImage};
 use serde::{Deserialize, Deserializer, de};
 
@@ -213,6 +214,190 @@ fn fill_disc(icon: &mut RgbaImage, g: &DiscGeometry, fill: Rgba<u8>) {
                 icon.get_pixel_mut(x, y).blend(&source);
             }
         }
+    }
+}
+
+/// The face badge text is drawn with.
+///
+/// DejaVu Sans Bold specifically, because that is what the pre-generated artwork
+/// used. Asking fontconfig for plain `sans-serif` yields Liberation Sans Bold on a
+/// typical Arch box, whose digits differ in shape and cap height — moving a key to
+/// a declared badge would then be a visible change. Falls back to any bold sans so
+/// a machine without DejaVu still gets a badge rather than none.
+#[allow(dead_code)]
+fn badge_font_bytes() -> Option<&'static [u8]> {
+    crate::font::get_system_font("DejaVu Sans", Some("Bold"))
+        .or_else(|| crate::font::get_system_font("sans-serif", Some("Bold")))
+}
+
+/// Cap height as a fraction of the disc diameter.
+///
+/// The generator's 0.729em cap height against its 1.22em disc.
+#[allow(dead_code)]
+const CAP_HEIGHT_FACTOR: f32 = 0.598;
+
+/// The ink box's half-diagonal may not exceed this fraction of the disc radius.
+///
+/// The generator's stated 0.51em digit half-diagonal against its 0.61em radius.
+/// Inactive for a single digit; it is what lets a two-character mark fit.
+#[allow(dead_code)]
+const FIT_LIMIT: f32 = 0.84;
+
+/// A mark laid out at the scale that fits it to the disc.
+#[allow(dead_code)]
+struct FittedText {
+    scale: f32,
+    glyphs: Vec<OutlinedGlyph>,
+    /// `(min_x, min_y, max_x, max_y)` of the union of the glyphs' ink bounds.
+    bounds: (f32, f32, f32, f32),
+}
+
+/// Ink height of a reference capital as a fraction of the px scale.
+///
+/// `ab_glyph` exposes ascent and descent but not cap height, and deriving the
+/// scale from the mark's own ink box would size `1` and `8` differently.
+/// Measuring one reference glyph keeps every digit consistent.
+#[allow(dead_code)]
+fn cap_height_ratio<F>(font: &F) -> Option<f32>
+where
+    F: Font,
+{
+    const TRIAL: f32 = 100.0;
+    let glyph = font
+        .glyph_id('H')
+        .with_scale_and_position(PxScale::from(TRIAL), point(0.0, 0.0));
+    let bounds = font.outline_glyph(glyph)?.px_bounds();
+    Some((bounds.max.y - bounds.min.y) / TRIAL)
+}
+
+/// Outline `text` on a baseline at the origin, dropping glyphs with no outline.
+#[allow(dead_code)]
+fn layout<F>(font: &F, text: &str, scale: f32) -> Vec<OutlinedGlyph>
+where
+    F: Font,
+{
+    let scaled = font.as_scaled(PxScale::from(scale));
+    let mut pen_x = 0.0;
+    let mut glyphs = Vec::new();
+
+    for ch in text.chars() {
+        let id = font.glyph_id(ch);
+        let glyph = id.with_scale_and_position(PxScale::from(scale), point(pen_x, 0.0));
+        pen_x += scaled.h_advance(id);
+        if let Some(outlined) = font.outline_glyph(glyph) {
+            glyphs.push(outlined);
+        }
+    }
+
+    glyphs
+}
+
+/// Union of the glyphs' ink bounds, or `None` when none has an outline.
+#[allow(dead_code)]
+fn ink_bounds(glyphs: &[OutlinedGlyph]) -> Option<(f32, f32, f32, f32)> {
+    let mut iter = glyphs.iter();
+    let first = iter.next()?.px_bounds();
+    let mut bounds = (first.min.x, first.min.y, first.max.x, first.max.y);
+
+    for glyph in iter {
+        let b = glyph.px_bounds();
+        bounds.0 = bounds.0.min(b.min.x);
+        bounds.1 = bounds.1.min(b.min.y);
+        bounds.2 = bounds.2.max(b.max.x);
+        bounds.3 = bounds.3.max(b.max.y);
+    }
+
+    Some(bounds)
+}
+
+/// Half-diagonal of an ink box.
+#[allow(dead_code)]
+fn half_diagonal(bounds: (f32, f32, f32, f32)) -> f32 {
+    let (min_x, min_y, max_x, max_y) = bounds;
+    let (w, h) = (max_x - min_x, max_y - min_y);
+    0.5 * (w * w + h * h).sqrt()
+}
+
+/// Lay `text` out at the scale that fits it to a disc of radius `r`.
+///
+/// Returns `None` when the font has no cap-height reference or the mark has no
+/// drawable outline at all.
+#[allow(dead_code)]
+fn fit_text<F>(font: &F, text: &str, r: f32) -> Option<FittedText>
+where
+    F: Font,
+{
+    let cap_ratio = cap_height_ratio(font)?;
+    if cap_ratio <= 0.0 {
+        return None;
+    }
+
+    let mut scale = CAP_HEIGHT_FACTOR * 2.0 * r / cap_ratio;
+    let mut glyphs = layout(font, text, scale);
+    let mut bounds = ink_bounds(&glyphs)?;
+
+    // Ink scales linearly with px scale, so one correction pass is exact enough.
+    let limit = FIT_LIMIT * r;
+    let extent = half_diagonal(bounds);
+    if extent > limit && extent > 0.0 {
+        scale *= limit / extent;
+        glyphs = layout(font, text, scale);
+        bounds = ink_bounds(&glyphs)?;
+    }
+
+    Some(FittedText {
+        scale,
+        glyphs,
+        bounds,
+    })
+}
+
+/// Draw `text` centred on the disc, in `color`.
+///
+/// Silently draws nothing if no bold sans face is available — a missing badge is
+/// better than a missing button.
+#[allow(dead_code)]
+fn draw_text_mark(icon: &mut RgbaImage, g: &DiscGeometry, text: &str, color: Rgba<u8>) {
+    let Some(bytes) = badge_font_bytes() else {
+        tracing::warn!("No bold sans face found; badge text not drawn");
+        return;
+    };
+    let Ok(font) = FontRef::try_from_slice(bytes) else {
+        tracing::warn!("Bold sans face could not be parsed; badge text not drawn");
+        return;
+    };
+    let Some(fitted) = fit_text(&font, text, g.r) else {
+        tracing::debug!(text, "Badge mark has no drawable outline");
+        return;
+    };
+
+    // Centre the ink box on the disc centre.
+    let (min_x, min_y, max_x, max_y) = fitted.bounds;
+    let offset_x = g.cx - (min_x + max_x) / 2.0;
+    let offset_y = g.cy - (min_y + max_y) / 2.0;
+    let (width, height) = (icon.width(), icon.height());
+
+    tracing::debug!(text, scale = fitted.scale, "Drawing badge text mark");
+
+    for glyph in &fitted.glyphs {
+        let origin = glyph.px_bounds().min;
+        glyph.draw(|gx, gy, coverage| {
+            if coverage <= 0.0 {
+                return;
+            }
+            let x = origin.x + offset_x + gx as f32;
+            let y = origin.y + offset_y + gy as f32;
+            if x < 0.0 || y < 0.0 {
+                return;
+            }
+            let (x, y) = (x.round() as u32, y.round() as u32);
+            if x >= width || y >= height {
+                return;
+            }
+            let mut source = color;
+            source[3] = (f32::from(color[3]) * coverage.min(1.0)).round() as u8;
+            icon.get_pixel_mut(x, y).blend(&source);
+        });
     }
 }
 
@@ -519,5 +704,157 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    /// The face the badge draws with. Hard-required: a test that silently passes
+    /// when the font is missing is not a test. Returns `Result` so callers use `?`
+    /// rather than unwrapping.
+    fn bold_sans() -> Result<FontRef<'static>, String> {
+        let bytes = badge_font_bytes()
+            .ok_or("DejaVu Sans Bold must be installed: the badge is drawn with it")?;
+        FontRef::try_from_slice(bytes).map_err(|e| format!("badge font failed to parse: {e}"))
+    }
+
+    // `half_diagonal` is the production function, reached via `use super::*`.
+    // Do not redefine it here: a test-local copy would shadow the glob import and
+    // the fit tests would stop exercising the real code.
+
+    #[test]
+    fn fit_text_sizes_every_digit_the_same() -> Result<(), String> {
+        let font = bold_sans()?;
+        let one = fit_text(&font, "1", 40.0).ok_or("no fit for 1")?;
+        let eight = fit_text(&font, "8", 40.0).ok_or("no fit for 8")?;
+        assert!(
+            (one.scale - eight.scale).abs() < 0.01,
+            "1 scaled to {} but 8 to {}",
+            one.scale,
+            eight.scale
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn fit_text_shrinks_a_two_character_mark() -> Result<(), String> {
+        let font = bold_sans()?;
+        let one = fit_text(&font, "1", 40.0).ok_or("no fit for 1")?;
+        let twelve = fit_text(&font, "12", 40.0).ok_or("no fit for 12")?;
+        assert!(
+            twelve.scale < one.scale,
+            "12 scaled to {} which is not smaller than {}",
+            twelve.scale,
+            one.scale
+        );
+        Ok(())
+    }
+
+    /// Cross-check `CAP_HEIGHT_FACTOR` against the generator's own arithmetic, in
+    /// **pixels** rather than in font-scale units.
+    ///
+    /// The generator draws at SVG `font-size="135"` on a 512 canvas and DejaVu Sans
+    /// Bold's cap height is 0.729em, so its cap height is 98.415px. Ours is
+    /// `CAP_HEIGHT_FACTOR * disc diameter` = 97.976px — 0.44px apart, which is what
+    /// makes a declared badge indistinguishable from the shipped artwork.
+    ///
+    /// Measured on `H`, which is flat-topped: round glyphs overshoot the cap line by
+    /// design for optical correction, so DejaVu Sans Bold's `8` (yMin -29, yMax 1520)
+    /// stands 3.75% taller than its `H` (0, 1493) and would confound this.
+    ///
+    /// Do NOT instead assert `fitted.scale == 135`. `ab_glyph`'s `PxScale` is relative
+    /// to the font's ascent-to-descent span (2384 units for this face), not the em
+    /// square (2048), so the `PxScale` equivalent of SVG font-size 135 is 157.15 and
+    /// comparing the two directly is a unit error. `fit_text` derives 155.52 here.
+    #[test]
+    fn fit_text_reproduces_the_generators_cap_height() -> Result<(), String> {
+        let font = bold_sans()?;
+        let r = 81.92; // the 512-canvas disc radius
+        let fitted = fit_text(&font, "H", r).ok_or("no fit for H")?;
+        let (_, min_y, _, max_y) = fitted.bounds;
+        let generator_cap = 0.729 * 135.0;
+        assert!(
+            (max_y - min_y - generator_cap).abs() < 1.5,
+            "cap height {} differs from the generator's {generator_cap}",
+            max_y - min_y
+        );
+        Ok(())
+    }
+
+    /// The cap-height derivation itself, measured on a flat-topped reference glyph
+    /// with no overshoot, so this pins `CAP_HEIGHT_FACTOR` without a glyph-shape
+    /// confound.
+    #[test]
+    fn fit_text_puts_cap_height_at_the_normative_fraction() -> Result<(), String> {
+        let font = bold_sans()?;
+        let r = 81.92;
+        let fitted = fit_text(&font, "H", r).ok_or("no fit for H")?;
+        let (_, min_y, _, max_y) = fitted.bounds;
+        let want = CAP_HEIGHT_FACTOR * 2.0 * r;
+        // px_bounds are conservative whole numbers, so allow a pixel either way.
+        assert!(
+            (max_y - min_y - want).abs() < 2.0,
+            "cap height {} differs from target {want}",
+            max_y - min_y
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn fit_text_keeps_marks_inside_the_disc() -> Result<(), String> {
+        let font = bold_sans()?;
+        let r = 40.0;
+        for text in ["1", "8", "12", "99", "W"] {
+            let fitted = fit_text(&font, text, r).ok_or("no fit")?;
+            let hd = half_diagonal(fitted.bounds);
+            assert!(
+                hd <= FIT_LIMIT * r + 1.0,
+                "{text} half-diagonal {hd} exceeds limit {}",
+                FIT_LIMIT * r
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn fit_text_returns_none_for_a_mark_with_no_outline() -> Result<(), String> {
+        let font = bold_sans()?;
+        assert!(fit_text(&font, "   ", 40.0).is_none());
+        assert!(fit_text(&font, "", 40.0).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn draw_text_mark_paints_inside_the_disc_and_not_outside_it() {
+        let mut img = RgbaImage::from_pixel(72, 72, Rgba([0, 0, 0, 255]));
+        let spec = spec_at(Gravity::NorthEast);
+        let g = disc_geometry(72, 72, &spec);
+        let color = Rgba([0xff, 0xff, 0xff, 0xff]);
+
+        fill_disc(&mut img, &g, Rgba([0x03, 0x4a, 0x0e, 0xff]));
+        draw_text_mark(&mut img, &g, "8", color);
+
+        let mut painted_inside = 0usize;
+        for y in 0..72 {
+            for x in 0..72 {
+                if *img.get_pixel(x, y) != color {
+                    continue;
+                }
+                let dx = f32::from(x as u16) + 0.5 - g.cx;
+                let dy = f32::from(y as u16) + 0.5 - g.cy;
+                let distance = (dx * dx + dy * dy).sqrt();
+                assert!(
+                    distance <= g.r + 1.0,
+                    "text pixel at ({x},{y}) is outside the disc"
+                );
+                painted_inside += 1;
+            }
+        }
+        assert!(painted_inside > 0, "no text pixels were painted");
+    }
+
+    #[test]
+    fn draw_text_mark_does_not_panic_on_whitespace() {
+        let mut img = RgbaImage::from_pixel(72, 72, Rgba([0, 0, 0, 255]));
+        let spec = spec_at(Gravity::NorthEast);
+        let g = disc_geometry(72, 72, &spec);
+        draw_text_mark(&mut img, &g, "   ", Rgba([255, 255, 255, 255]));
     }
 }
