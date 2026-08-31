@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.2.0 - 2026-08-31
+#### Features
+- (**release**) assert releases run from main - (8a9debb) - Neale Swinnerton
+#### Bug Fixes
+- (**font**) pick a face that covers the text being drawn - (8034710) - Neale Swinnerton
+#### Miscellaneous Chores
+- (**release**) add Justfile with release recipe - (97e45b0) - Neale Swinnerton
+
+- - -
+
 ## v0.1.0 - 2026-07-30
 #### Features
 - (**badge**) serialize Gravity as its ImageMagick spelling - (3ff98a0) - Neale Swinnerton
