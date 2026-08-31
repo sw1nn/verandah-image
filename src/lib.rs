@@ -13,6 +13,7 @@ pub mod badge;
 pub mod colors;
 pub mod font;
 pub mod image;
+pub mod label;
 pub mod text;
 
 /// Prelude module for convenient imports.
