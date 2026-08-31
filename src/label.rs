@@ -37,13 +37,46 @@ impl Default for LabelSpec {
     }
 }
 
+/// Whether the caption was drawn whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelFit {
+    Fitted,
+    Truncated,
+}
+
+/// The caption as it will be drawn, clipped to `max_width` with an ellipsis.
+///
+/// Characters, not bytes: a byte-wise cut would split a multi-byte glyph.
+fn fit_caption<F>(font: &F, text: &str, scale: f32, max_width: f32) -> (String, LabelFit)
+where
+    F: Font,
+{
+    let width_of = |s: &str| crate::text::measure_text_width(font, s) * scale;
+
+    if width_of(text) <= max_width {
+        return (text.to_owned(), LabelFit::Fitted);
+    }
+
+    let mut kept = String::new();
+    for c in text.chars() {
+        let mut candidate = kept.clone();
+        candidate.push(c);
+        if width_of(&format!("{candidate}…")) > max_width {
+            break;
+        }
+        kept = candidate;
+    }
+
+    (format!("{kept}…"), LabelFit::Truncated)
+}
+
 /// Compose a caption strip along the bottom of `icon`.
 ///
 /// A blank caption draws nothing, strip included: an empty band over the
 /// artwork reads as a rendering fault rather than as an absent label.
-pub fn apply_label(icon: &mut RgbaImage, spec: &LabelSpec, text: &str) {
+pub fn apply_label(icon: &mut RgbaImage, spec: &LabelSpec, text: &str) -> LabelFit {
     if text.trim().is_empty() {
-        return;
+        return LabelFit::Fitted;
     }
 
     let (width, height) = (icon.width(), icon.height());
@@ -59,23 +92,27 @@ pub fn apply_label(icon: &mut RgbaImage, spec: &LabelSpec, text: &str) {
             text,
             "No font covers this caption; strip drawn without text"
         );
-        return;
+        return LabelFit::Fitted;
     };
     let Ok(font) = FontRef::try_from_slice(font_bytes) else {
-        return;
+        return LabelFit::Fitted;
     };
 
     let scale_value = shorter * spec.text_size;
     let scale = PxScale::from(scale_value);
 
-    // `measure_text_width` reports advance at scale 1.0, so scale it up here.
-    let text_width = crate::text::measure_text_width(&font, text) * scale_value;
+    let padding = shorter * spec.padding;
+    let max_width = (width as f32 - padding * 2.0).max(0.0);
+    let (caption, fit) = fit_caption(&font, text, scale_value, max_width);
+
+    let text_width = crate::text::measure_text_width(&font, &caption) * scale_value;
     let line_height = font.as_scaled(scale).height();
 
     let x = ((width as f32 - text_width) / 2.0).max(0.0) as i32;
     let y = (strip_top as f32 + (strip_height as f32 - line_height) / 2.0).max(0.0) as i32;
 
-    draw_text_mut(icon, spec.text_color, x, y, scale, &font, text);
+    draw_text_mut(icon, spec.text_color, x, y, scale, &font, &caption);
+    fit
 }
 
 /// Alpha-blend `colour` over every row from `top` to the bottom edge.
@@ -163,6 +200,79 @@ mod tests {
                 "blank caption {text:?} modified the image"
             );
         }
+        Ok(())
+    }
+
+    /// A caption that fits must be drawn whole, with no ellipsis.
+    #[test]
+    fn short_caption_is_not_truncated() -> Result<(), String> {
+        let mut icon = canvas(96);
+        assert!(matches!(
+            apply_label(&mut icon, &LabelSpec::default(), "Go"),
+            LabelFit::Fitted
+        ));
+        Ok(())
+    }
+
+    /// A caption past the strip's width is truncated rather than shrunk: one
+    /// size across a deck is what makes a row of captions scannable.
+    #[test]
+    fn long_caption_is_truncated() -> Result<(), String> {
+        let mut icon = canvas(72);
+        assert!(matches!(
+            apply_label(
+                &mut icon,
+                &LabelSpec::default(),
+                "Sketcher Select Elements Associated With Constraints"
+            ),
+            LabelFit::Truncated
+        ));
+        Ok(())
+    }
+
+    /// The boundary itself: the longest caption that fits is untouched, and one
+    /// character more truncates. Asserting only the extremes would still pass
+    /// with an off-by-many truncation rule.
+    #[test]
+    fn truncation_boundary_is_one_character_wide() -> Result<(), String> {
+        let spec = LabelSpec::default();
+        let mut icon = canvas(72);
+
+        let mut longest_fitting = String::new();
+        for _ in 0..64 {
+            let mut candidate = longest_fitting.clone();
+            candidate.push('W');
+            let mut probe = canvas(72);
+            match apply_label(&mut probe, &spec, &candidate) {
+                LabelFit::Fitted => longest_fitting = candidate,
+                LabelFit::Truncated => break,
+            }
+        }
+
+        assert!(
+            !longest_fitting.is_empty(),
+            "no caption fitted at all, so the boundary test proves nothing"
+        );
+        assert!(matches!(
+            apply_label(&mut icon, &spec, &longest_fitting),
+            LabelFit::Fitted
+        ));
+
+        let one_more = format!("{longest_fitting}W");
+        assert!(matches!(
+            apply_label(&mut icon, &spec, &one_more),
+            LabelFit::Truncated
+        ));
+        Ok(())
+    }
+
+    /// Truncation must not split a multi-byte character.
+    #[test]
+    fn truncation_respects_char_boundaries() -> Result<(), String> {
+        let mut icon = canvas(72);
+        // Every character is multi-byte; a byte-wise truncation would panic.
+        let text = "ααααααααααααααααααααααααααααα";
+        let _ = apply_label(&mut icon, &LabelSpec::default(), text);
         Ok(())
     }
 }
