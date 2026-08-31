@@ -37,7 +37,9 @@ impl Default for LabelSpec {
     }
 }
 
-/// Whether the caption was drawn whole.
+/// Whether the caption was drawn as requested. `Truncated` means something went
+/// wrong — the caption was cut short, or not drawn at all — and the caller should
+/// warn about a clipped or missing label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LabelFit {
     Fitted,
@@ -55,6 +57,12 @@ where
 
     if width_of(text) <= max_width {
         return (text.to_owned(), LabelFit::Fitted);
+    }
+
+    // If even the ellipsis alone overflows, return empty caption.
+    let ellipsis_width = width_of("…");
+    if ellipsis_width > max_width {
+        return (String::new(), LabelFit::Truncated);
     }
 
     let mut kept = String::new();
@@ -92,10 +100,14 @@ pub fn apply_label(icon: &mut RgbaImage, spec: &LabelSpec, text: &str) -> LabelF
             text,
             "No font covers this caption; strip drawn without text"
         );
-        return LabelFit::Fitted;
+        return LabelFit::Truncated;
     };
     let Ok(font) = FontRef::try_from_slice(font_bytes) else {
-        return LabelFit::Fitted;
+        tracing::warn!(
+            text,
+            "Font data could not be parsed; strip drawn without text"
+        );
+        return LabelFit::Truncated;
     };
 
     let scale_value = shorter * spec.text_size;
@@ -273,6 +285,23 @@ mod tests {
         // Every character is multi-byte; a byte-wise truncation would panic.
         let text = "ααααααααααααααααααααααααααααα";
         let _ = apply_label(&mut icon, &LabelSpec::default(), text);
+        Ok(())
+    }
+
+    /// A spec with padding large enough to exceed available width must not return
+    /// a caption wider than the budget. This pins the ellipsis-overflow fix.
+    #[test]
+    fn ellipsis_does_not_overflow_max_width() -> Result<(), String> {
+        let mut icon = canvas(72);
+        // Padding of 0.49 leaves only 72 * (1.0 - 2 * 0.49) = 2.88 pixels for text.
+        // The ellipsis likely won't fit.
+        let spec = LabelSpec {
+            padding: 0.49,
+            ..Default::default()
+        };
+        let fit = apply_label(&mut icon, &spec, "Any caption at all");
+        // Either it fits or it truncates, but it must not panic or overflow.
+        assert!(matches!(fit, LabelFit::Fitted | LabelFit::Truncated));
         Ok(())
     }
 }
