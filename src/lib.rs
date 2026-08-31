@@ -5,6 +5,7 @@
 //! - **font**: system font loading via fontconfig
 //! - **text**: text measurement and rendering utilities
 //! - **image**: image effects (brightness pulse) and format conversions
+//! - **label**: Compose a caption strip along the bottom edge of an icon
 //!
 //! Nothing in this crate crosses the verandah plugin ABI, so verandah and a
 //! plugin may each link their own version without conflict.
@@ -34,6 +35,9 @@ pub mod prelude {
 
     // Badge composition
     pub use crate::badge::{BadgeSpec, Gravity, Mark, apply_badge};
+
+    // Label composition
+    pub use crate::label::{LabelFit, LabelSpec, apply_label};
 
     // Colors
     pub use crate::colors::{get_color, hex as rgb, lookup as lookup_color, parse_colors};
