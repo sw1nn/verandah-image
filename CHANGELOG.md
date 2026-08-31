@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.0 - 2026-08-31
+#### Features
+- (**label**) export label composition from the prelude - (29563d4) - Neale Swinnerton
+- (**label**) truncate a caption too wide for the strip - (d625cad) - Neale Swinnerton
+- (**label**) compose a caption strip along the bottom of an icon - (a3eba72) - Neale Swinnerton
+#### Bug Fixes
+- (**label**) handle font failures and ellipsis overflow correctly - (2ed7fa3) - Neale Swinnerton
+
+- - -
+
 ## v0.2.0 - 2026-08-31
 #### Features
 - (**release**) assert releases run from main - (8a9debb) - Neale Swinnerton

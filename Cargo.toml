@@ -1,6 +1,6 @@
 [package]
 name = "verandah-image"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Image composition and rendering helpers shared by verandah and its plugins"
 license = "MIT"
