@@ -247,16 +247,20 @@ fn fill_disc(icon: &mut RgbaImage, g: &DiscGeometry, fill: Rgba<u8>) {
     }
 }
 
-/// The face badge text is drawn with.
+/// The face `text` is drawn with.
 ///
-/// DejaVu Sans Bold specifically, because that is what the pre-generated artwork
+/// DejaVu Sans Bold is preferred, because that is what the pre-generated artwork
 /// used. Asking fontconfig for plain `sans-serif` yields Liberation Sans Bold on a
 /// typical Arch box, whose digits differ in shape and cap height — moving a key to
 /// a declared badge would then be a visible change. Falls back to any bold sans so
 /// a machine without DejaVu still gets a badge rather than none.
-fn badge_font_bytes() -> Option<&'static [u8]> {
-    crate::font::get_system_font("DejaVu Sans", Some("Bold"))
-        .or_else(|| crate::font::get_system_font("sans-serif", Some("Bold")))
+///
+/// `text` is passed through so the preference yields to coverage: a mark DejaVu
+/// cannot draw, such as a Nerd Font codepoint, resolves to a face that can rather
+/// than to a tofu box. Digits are in DejaVu, so the artwork keeps its face.
+fn badge_font_bytes(text: &str) -> Option<&'static [u8]> {
+    crate::font::get_system_font_for_text("DejaVu Sans", Some("Bold"), text)
+        .or_else(|| crate::font::get_system_font_for_text("sans-serif", Some("Bold"), text))
 }
 
 /// Cap height as a fraction of the disc diameter.
@@ -378,7 +382,7 @@ where
 /// Silently draws nothing if no bold sans face is available — a missing badge is
 /// better than a missing button.
 fn draw_text_mark(icon: &mut RgbaImage, g: &DiscGeometry, text: &str, color: Rgba<u8>) {
-    let Some(bytes) = badge_font_bytes() else {
+    let Some(bytes) = badge_font_bytes(text) else {
         tracing::warn!("No bold sans face found; badge text not drawn");
         return;
     };
@@ -792,11 +796,47 @@ mod tests {
         Ok(())
     }
 
+    /// A Nerd Font wrench, in the private use area. DejaVu Sans Bold has no glyph
+    /// there, so a badge declaring this mark drew `.notdef` — an empty box — and
+    /// nothing in the log said why. Face selection has to weigh what the mark needs.
+    const WRENCH: char = '\u{f0ad}';
+
+    #[test]
+    fn badge_face_covers_a_private_use_mark() -> Result<(), String> {
+        let bytes = badge_font_bytes(&WRENCH.to_string())
+            .ok_or("no bold sans face found: the badge cannot be drawn at all")?;
+        let font = FontRef::try_from_slice(bytes)
+            .map_err(|e| format!("badge font failed to parse: {e}"))?;
+
+        assert_ne!(
+            font.glyph_id(WRENCH).0,
+            0,
+            "resolved face has no glyph for U+F0AD; the mark draws as an empty box"
+        );
+        Ok(())
+    }
+
+    /// Coverage must not cost the artwork its face: every digit is in DejaVu Sans
+    /// Bold, so a numeric mark still has to resolve to it.
+    #[test]
+    fn digit_mark_still_resolves_to_dejavu_sans_bold() -> Result<(), String> {
+        let expected = crate::font::get_system_font("DejaVu Sans", Some("Bold"))
+            .ok_or("DejaVu Sans Bold must be installed: the badge is drawn with it")?;
+        let actual = badge_font_bytes("8").ok_or("no bold sans face found")?;
+
+        assert!(
+            std::ptr::eq(expected.as_ptr(), actual.as_ptr()),
+            "a digit mark resolved away from DejaVu Sans Bold"
+        );
+        Ok(())
+    }
+
     /// The face the badge draws with. Hard-required: a test that silently passes
     /// when the font is missing is not a test. Returns `Result` so callers use `?`
     /// rather than unwrapping.
     fn bold_sans() -> Result<FontRef<'static>, String> {
-        let bytes = badge_font_bytes()
+        // The characters the fit tests measure, so coverage cannot move the face.
+        let bytes = badge_font_bytes("0123456789H")
             .ok_or("DejaVu Sans Bold must be installed: the badge is drawn with it")?;
         FontRef::try_from_slice(bytes).map_err(|e| format!("badge font failed to parse: {e}"))
     }

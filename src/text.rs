@@ -6,7 +6,7 @@ use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
 
-use crate::font::get_system_monospace_font;
+use crate::font::get_system_monospace_font_for_text;
 
 /// Calculate the width of a line of text using actual font metrics.
 pub fn measure_text_width<F>(font: &F, text: &str) -> f32
@@ -61,7 +61,7 @@ where
 /// * `fg_color` - The foreground (text) color
 /// * `padding` - Padding as a fraction of image size (0.0 to 0.4)
 pub fn draw_centered_text(rgba: &mut RgbaImage, text: &str, fg_color: Rgba<u8>, padding: f32) {
-    let Some(font_bytes) = get_system_monospace_font() else {
+    let Some(font_bytes) = get_system_monospace_font_for_text(text) else {
         return;
     };
     let Ok(font) = FontRef::try_from_slice(font_bytes) else {
@@ -129,7 +129,7 @@ pub fn draw_centered_text_with_reserved(
     reserved_bottom: f32,
     y_offset: f32,
 ) {
-    let Some(font_bytes) = get_system_monospace_font() else {
+    let Some(font_bytes) = get_system_monospace_font_for_text(text) else {
         return;
     };
     let Ok(font) = FontRef::try_from_slice(font_bytes) else {
@@ -182,7 +182,7 @@ pub fn draw_text_hcentered(
     scale_value: f32,
     y: i32,
 ) {
-    let Some(font_bytes) = get_system_monospace_font() else {
+    let Some(font_bytes) = get_system_monospace_font_for_text(text) else {
         return;
     };
     let Ok(font) = FontRef::try_from_slice(font_bytes) else {
@@ -210,7 +210,7 @@ mod tests {
 
     // Helper to get a test font
     fn get_test_font() -> Option<FontRef<'static>> {
-        let font_bytes = get_system_monospace_font()?;
+        let font_bytes = crate::font::get_system_monospace_font()?;
         FontRef::try_from_slice(font_bytes).ok()
     }
 

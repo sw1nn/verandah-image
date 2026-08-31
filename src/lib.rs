@@ -38,7 +38,10 @@ pub mod prelude {
     pub use crate::colors::{get_color, hex as rgb, lookup as lookup_color, parse_colors};
 
     // Font
-    pub use crate::font::{get_system_font, get_system_monospace_font};
+    pub use crate::font::{
+        get_system_font, get_system_font_for_text, get_system_monospace_font,
+        get_system_monospace_font_for_text,
+    };
 
     // Text
     pub use crate::text::{
