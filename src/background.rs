@@ -80,6 +80,14 @@ fn inside_rounded_rect(
     if x < left || x > right || y < top || y > bottom {
         return false;
     }
+
+    // Cap the radius at half the rect's smaller dimension: past that, the
+    // corner clamp below would invert (min > max) and panic. Capping instead
+    // degrades an oversized radius to a stadium or circle.
+    let radius = radius
+        .min((right - left) / 2.0)
+        .min((bottom - top) / 2.0)
+        .max(0.0);
     if radius <= 0.0 {
         return true;
     }
@@ -200,6 +208,36 @@ mod tests {
             rounded.get_pixel(probe, probe).0[3] < 255,
             "rounded plate painted a corner a square one would"
         );
+        Ok(())
+    }
+
+    /// A radius requested past half the plate's shorter side must not invert
+    /// the corner clamp and panic; it should instead degrade to a stadium or
+    /// circle, still painting a sane plate.
+    #[test]
+    fn oversized_radius_does_not_panic() -> Result<(), String> {
+        for radius in [0.5f32, 1.0, 5.0] {
+            let size = 96u32;
+            let mut icon = RgbaImage::from_pixel(size, size, Rgba([0, 0, 0, 0]));
+            let spec = BackgroundSpec {
+                colour: Rgba([255, 255, 255, 255]),
+                radius,
+                ..Default::default()
+            };
+
+            apply_background(&mut icon, &spec);
+
+            assert_eq!(
+                *icon.get_pixel(size / 2, size / 2),
+                Rgba([255, 255, 255, 255]),
+                "centre was not painted with radius fraction {radius}"
+            );
+            assert_eq!(
+                icon.get_pixel(0, 0).0[3],
+                0,
+                "top-left corner was painted despite the inset with radius fraction {radius}"
+            );
+        }
         Ok(())
     }
 
