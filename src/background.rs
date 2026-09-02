@@ -11,7 +11,7 @@ pub const DEFAULT_RADIUS: f32 = 0.16;
 /// so one setting works across every device size.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BackgroundSpec {
-    pub colour: Rgba<u8>,
+    pub color: Rgba<u8>,
     pub inset: f32,
     pub radius: f32,
 }
@@ -19,7 +19,7 @@ pub struct BackgroundSpec {
 impl Default for BackgroundSpec {
     fn default() -> Self {
         Self {
-            colour: Rgba([0, 0, 0, 0]),
+            color: Rgba([0, 0, 0, 0]),
             inset: DEFAULT_INSET,
             radius: DEFAULT_RADIUS,
         }
@@ -35,7 +35,7 @@ impl Default for BackgroundSpec {
 ///
 /// A fully transparent colour draws nothing, so an unset background is free.
 pub fn apply_background(icon: &mut RgbaImage, spec: &BackgroundSpec) {
-    if spec.colour.0[3] == 0 {
+    if spec.color.0[3] == 0 {
         return;
     }
 
@@ -46,7 +46,7 @@ pub fn apply_background(icon: &mut RgbaImage, spec: &BackgroundSpec) {
     for y in 0..height {
         for x in 0..width {
             if inside_rounded_rect(x as f32, y as f32, left, top, right, bottom, radius) {
-                plate.put_pixel(x, y, spec.colour);
+                plate.put_pixel(x, y, spec.color);
             }
         }
     }
@@ -68,11 +68,11 @@ pub fn apply_background(icon: &mut RgbaImage, spec: &BackgroundSpec) {
 /// to show a ground through.
 pub fn apply_tint(image: &mut RgbaImage, spec: &BackgroundSpec, alpha: f32) {
     let alpha = alpha.clamp(0.0, 1.0);
-    if alpha == 0.0 || spec.colour.0[3] == 0 {
+    if alpha == 0.0 || spec.color.0[3] == 0 {
         return;
     }
 
-    let mut over = spec.colour;
+    let mut over = spec.color;
     over.0[3] = (255.0 * alpha).round() as u8;
 
     let (width, height) = (image.width(), image.height());
@@ -145,7 +145,7 @@ mod tests {
     fn plate_shows_through_transparent_artwork() -> Result<(), String> {
         let mut icon = RgbaImage::from_pixel(96, 96, Rgba([0, 0, 0, 0]));
         let spec = BackgroundSpec {
-            colour: Rgba([0x2f, 0x7f, 0x86, 0xff]),
+            color: Rgba([0x2f, 0x7f, 0x86, 0xff]),
             ..Default::default()
         };
 
@@ -165,7 +165,7 @@ mod tests {
     fn opaque_artwork_is_not_tinted() -> Result<(), String> {
         let mut icon = RgbaImage::from_pixel(96, 96, Rgba([200, 10, 10, 255]));
         let spec = BackgroundSpec {
-            colour: Rgba([0x2f, 0x7f, 0x86, 0xff]),
+            color: Rgba([0x2f, 0x7f, 0x86, 0xff]),
             ..Default::default()
         };
 
@@ -186,7 +186,7 @@ mod tests {
         for size in [72u32, 96] {
             let mut icon = RgbaImage::from_pixel(size, size, Rgba([0, 0, 0, 0]));
             let spec = BackgroundSpec {
-                colour: Rgba([255, 255, 255, 255]),
+                color: Rgba([255, 255, 255, 255]),
                 ..Default::default()
             };
 
@@ -214,18 +214,18 @@ mod tests {
         let mut rounded = RgbaImage::from_pixel(size, size, Rgba([0, 0, 0, 0]));
         let mut square = RgbaImage::from_pixel(size, size, Rgba([0, 0, 0, 0]));
 
-        let colour = Rgba([255, 255, 255, 255]);
+        let color = Rgba([255, 255, 255, 255]);
         apply_background(
             &mut rounded,
             &BackgroundSpec {
-                colour,
+                color,
                 ..Default::default()
             },
         );
         apply_background(
             &mut square,
             &BackgroundSpec {
-                colour,
+                color,
                 radius: 0.0,
                 ..Default::default()
             },
@@ -255,7 +255,7 @@ mod tests {
             let size = 96u32;
             let mut icon = RgbaImage::from_pixel(size, size, Rgba([0, 0, 0, 0]));
             let spec = BackgroundSpec {
-                colour: Rgba([255, 255, 255, 255]),
+                color: Rgba([255, 255, 255, 255]),
                 radius,
                 ..Default::default()
             };
@@ -300,7 +300,7 @@ mod tests {
         apply_background(
             &mut icon,
             &BackgroundSpec {
-                colour: Rgba([255, 255, 255, 255]),
+                color: Rgba([255, 255, 255, 255]),
                 ..Default::default()
             },
         );
@@ -320,7 +320,7 @@ mod tests {
     fn tint_blends_over_opaque_artwork() -> Result<(), String> {
         let mut image = RgbaImage::from_pixel(96, 96, Rgba([0, 0, 0, 255]));
         let spec = BackgroundSpec {
-            colour: Rgba([255, 255, 255, 255]),
+            color: Rgba([255, 255, 255, 255]),
             ..Default::default()
         };
 
@@ -343,7 +343,7 @@ mod tests {
         apply_tint(
             &mut image,
             &BackgroundSpec {
-                colour: Rgba([255, 255, 255, 255]),
+                color: Rgba([255, 255, 255, 255]),
                 ..Default::default()
             },
             0.45,
@@ -367,7 +367,7 @@ mod tests {
         apply_tint(
             &mut image,
             &BackgroundSpec {
-                colour: Rgba([255, 255, 255, 255]),
+                color: Rgba([255, 255, 255, 255]),
                 ..Default::default()
             },
             0.0,
