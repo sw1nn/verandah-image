@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.4.0 - 2026-09-02
+#### Features
+- (**background**) blend a card tint over a composed key image - (a5fa205) - Neale Swinnerton
+- (**background**) compose a rounded plate beneath a key's artwork - (6bd1df2) - Neale Swinnerton
+#### Bug Fixes
+- (**background**) antialias the plate corners - (22243fe) - Neale Swinnerton
+- (**background**) cap radius so inside_rounded_rect cannot panic - (6d5888b) - Neale Swinnerton
+#### Refactoring
+- (**background**) spell BackgroundSpec's colour field `color` - (ee3a06b) - Neale Swinnerton
+
+- - -
+
 ## v0.3.0 - 2026-08-31
 #### Features
 - (**label**) export label composition from the prelude - (29563d4) - Neale Swinnerton
