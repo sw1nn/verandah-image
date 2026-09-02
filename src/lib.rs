@@ -1,5 +1,6 @@
 //! Image composition and rendering helpers shared by verandah and its plugins.
 //!
+//! - **background**: Compose a rounded plate beneath a key's artwork
 //! - **badge**: Compose a badge — a mark on a filled disc — onto an icon
 //! - **colors**: CSS color parsing (named colors and hex formats)
 //! - **font**: system font loading via fontconfig
@@ -10,6 +11,7 @@
 //! Nothing in this crate crosses the verandah plugin ABI, so verandah and a
 //! plugin may each link their own version without conflict.
 
+pub mod background;
 pub mod badge;
 pub mod colors;
 pub mod font;
