@@ -40,14 +40,7 @@ pub fn apply_background(icon: &mut RgbaImage, spec: &BackgroundSpec) {
     }
 
     let (width, height) = (icon.width(), icon.height());
-    let shorter = width.min(height) as f32;
-    let inset = (shorter * spec.inset).round().max(0.0);
-    let radius = (shorter * spec.radius).round().max(0.0);
-
-    let left = inset;
-    let top = inset;
-    let right = width as f32 - inset - 1.0;
-    let bottom = height as f32 - inset - 1.0;
+    let (left, top, right, bottom, radius) = plate_geometry(width, height, spec);
 
     let mut plate = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 0]));
     for y in 0..height {
@@ -65,6 +58,48 @@ pub fn apply_background(icon: &mut RgbaImage, spec: &BackgroundSpec) {
         plate.put_pixel(x, y, under);
     }
     *icon = plate;
+}
+
+/// Blend the plate colour *over* an already-composed image at `alpha`.
+///
+/// The counterpart to [`apply_background`], for the case where the image is
+/// already opaque: a card tint on a rendered button, or on a plugin's own
+/// output. Over rather than under of necessity — there is no transparency left
+/// to show a ground through.
+pub fn apply_tint(image: &mut RgbaImage, spec: &BackgroundSpec, alpha: f32) {
+    let alpha = alpha.clamp(0.0, 1.0);
+    if alpha == 0.0 || spec.colour.0[3] == 0 {
+        return;
+    }
+
+    let mut over = spec.colour;
+    over.0[3] = (255.0 * alpha).round() as u8;
+
+    let (width, height) = (image.width(), image.height());
+    let (left, top, right, bottom, radius) = plate_geometry(width, height, spec);
+
+    for y in 0..height {
+        for x in 0..width {
+            if inside_rounded_rect(x as f32, y as f32, left, top, right, bottom, radius) {
+                image.get_pixel_mut(x, y).blend(&over);
+            }
+        }
+    }
+}
+
+/// Compute the plate geometry for a given image size and spec.
+/// Returns (left, top, right, bottom, radius).
+fn plate_geometry(width: u32, height: u32, spec: &BackgroundSpec) -> (f32, f32, f32, f32, f32) {
+    let shorter = width.min(height) as f32;
+    let inset = (shorter * spec.inset).round().max(0.0);
+    let radius = (shorter * spec.radius).round().max(0.0);
+
+    let left = inset;
+    let top = inset;
+    let right = width as f32 - inset - 1.0;
+    let bottom = height as f32 - inset - 1.0;
+
+    (left, top, right, bottom, radius)
 }
 
 /// Whether a point lies inside a rounded rectangle, corners included.
@@ -275,6 +310,73 @@ mod tests {
             icon.get_pixel(60, inset_px + 4).0[3],
             255,
             "plate did not reach the expected inset on the shorter side"
+        );
+        Ok(())
+    }
+
+    /// A tint blends over opaque artwork rather than replacing it: the result
+    /// must move towards the tint without becoming it.
+    #[test]
+    fn tint_blends_over_opaque_artwork() -> Result<(), String> {
+        let mut image = RgbaImage::from_pixel(96, 96, Rgba([0, 0, 0, 255]));
+        let spec = BackgroundSpec {
+            colour: Rgba([255, 255, 255, 255]),
+            ..Default::default()
+        };
+
+        apply_tint(&mut image, &spec, 0.45);
+
+        let centre = image.get_pixel(48, 48).0[0];
+        assert!(centre > 0, "tint did not lighten black artwork");
+        assert!(
+            centre < 255,
+            "tint replaced the artwork instead of blending"
+        );
+        Ok(())
+    }
+
+    /// The tint honours the same plate geometry, so a tinted key and a
+    /// backgrounded key are the same shape.
+    #[test]
+    fn tint_respects_the_inset() -> Result<(), String> {
+        let mut image = RgbaImage::from_pixel(96, 96, Rgba([0, 0, 0, 255]));
+        apply_tint(
+            &mut image,
+            &BackgroundSpec {
+                colour: Rgba([255, 255, 255, 255]),
+                ..Default::default()
+            },
+            0.45,
+        );
+
+        assert_eq!(
+            *image.get_pixel(0, 0),
+            Rgba([0, 0, 0, 255]),
+            "tint painted outside the plate inset"
+        );
+        Ok(())
+    }
+
+    /// An alpha of zero is a no-op, so a card colour can be suppressed without
+    /// a branch at the call site.
+    #[test]
+    fn zero_alpha_tint_draws_nothing() -> Result<(), String> {
+        let mut image = RgbaImage::from_pixel(72, 72, Rgba([10, 20, 30, 255]));
+        let before = image.as_raw().clone();
+
+        apply_tint(
+            &mut image,
+            &BackgroundSpec {
+                colour: Rgba([255, 255, 255, 255]),
+                ..Default::default()
+            },
+            0.0,
+        );
+
+        assert_eq!(
+            image.as_raw(),
+            &before,
+            "a zero-alpha tint modified the image"
         );
         Ok(())
     }

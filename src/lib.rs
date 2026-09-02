@@ -35,6 +35,9 @@ pub mod prelude {
     pub use imageproc::drawing::{draw_filled_rect_mut, draw_text_mut};
     pub use imageproc::rect::Rect;
 
+    // Background composition
+    pub use crate::background::{BackgroundSpec, apply_background, apply_tint};
+
     // Badge composition
     pub use crate::badge::{BadgeSpec, Gravity, Mark, apply_badge};
 
